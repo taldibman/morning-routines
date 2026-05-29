@@ -557,7 +557,7 @@ body {
   <div class="adm-card">
     <h3>🗑️ Factory Reset</h3>
     <p style="font-size:12px;color:#999;margin-bottom:10px">Clears <strong>all stars, all data</strong> and resets everything to defaults. Cannot be undone.</p>
-    <button onclick="factoryReset()" style="background:#ff4444;color:white;border:none;border-radius:14px;padding:11px 18px;font-family:Quicksand,sans-serif;font-weight:800;font-size:13px;cursor:pointer;width:100%">🗑️ Factory Reset — Clear Everything</button>
+    <button onclick="factoryReset()" style="background:#ff4444;color:white;border:none;border-radius:14px;padding:11px 18px;font-family:Quicksand,sans-serif;font-weight:800;font-size:13px;cursor:pointer;width:100%">🗑️ Reset Stars — Keep Tasks</button>
   </div>
 
   <div class="adm-card">
@@ -1377,10 +1377,19 @@ function resetTasks(){
 }
 
 async function factoryReset(){
-  if(!confirm('⚠️ This will clear ALL stars, tasks progress, and reset everything to defaults. Are you sure?')) return;
-  if(!confirm('Are you really sure? This cannot be undone.')) return;
-  const savedPin = S.pin; // preserve PIN across factory reset
-  S = JSON.parse(JSON.stringify(DEFAULTS));
+  if(!confirm('⚠️ This will reset ALL stars to zero. Tasks and chores will be kept. Are you sure?')) return;
+  if(!confirm('Are you really sure? Stars cannot be recovered.')) return;
+  const savedPin = S.pin;
+  // Zero out all stars, keep everything else
+  S.kids.forEach(k => {
+    k.starsAllTime = 0;
+    k.starsWeek = {};
+    k.starsMonth = {};
+    // Also uncheck all tasks
+    k.morningTasks.forEach(t => t.done = false);
+    k.eveningTasks.forEach(t => t.done = false);
+  });
+  S.chores.forEach(c => c.done = false);
   S.pin = savedPin;
   S.lastReset = new Date().toDateString();
   try { localStorage.removeItem('familyRoutines_v1'); } catch(e){}
@@ -1411,7 +1420,7 @@ async function factoryReset(){
   }
   renderAdmin();
   renderHome();
-  alert('✅ Factory reset complete! Everything is cleared.');
+  alert('✅ Stars reset! All tasks and chores have been kept.');
 }
 function editChore(i){
   document.getElementById('chore-lbl-'+i).style.display='none';
