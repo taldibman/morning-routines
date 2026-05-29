@@ -754,63 +754,117 @@ function setSyncStatus(state, msg) {
 }
 
 // Serialize state into sheet rows
-function stateToSheetData() {
-  const rows = [['KEY','VALUE','UPDATED']];
-  rows.push(['state_json', JSON.stringify(S), new Date().toISOString()]);
-  return rows;
+// ─── STRUCTURED SHEET HELPERS ───────────────────────────────────────────────
+
+// Returns all the ranges+values we want to write across 4 tabs
+function buildSheetPayload() {
+  const now = new Date().toISOString();
+  const data = [];
+
+  // ── Tab 1: Stars ──────────────────────────────────────────────────────────
+  const starsRows = [['Kid', 'Stars (All Time)', 'Stars (This Week)', 'Stars (This Month)', 'Rank', 'Last Updated']];
+  S.kids.forEach(k => {
+    const weekKey  = getWeekKey();
+    const monthKey = getMonthKey();
+    const weekStars  = (k.starsWeek  && k.starsWeek[weekKey])  || 0;
+    const monthStars = (k.starsMonth && k.starsMonth[monthKey]) || 0;
+    const rank = getRank(k.starsAllTime);
+    starsRows.push([k.name, k.starsAllTime, weekStars, monthStars, `${rank.emoji} ${rank.name}`, now]);
+  });
+  data.push({ range: 'Stars!A1', values: starsRows });
+
+  // ── Tab 2: Tasks ──────────────────────────────────────────────────────────
+  const taskRows = [['Kid', 'Session', 'Task', 'Done Today']];
+  S.kids.forEach(k => {
+    k.morningTasks.forEach(t => taskRows.push([k.name, 'Morning', t.label, t.done ? 'Yes' : 'No']));
+    k.eveningTasks.forEach(t => taskRows.push([k.name, 'Evening', t.label, t.done ? 'Yes' : 'No']));
+  });
+  data.push({ range: 'Tasks!A1', values: taskRows });
+
+  // ── Tab 3: Chores ─────────────────────────────────────────────────────────
+  const choreRows = [['Chore', 'Done Today', 'Done By']];
+  S.chores.forEach(c => choreRows.push([c.label, c.done ? 'Yes' : 'No', c.doneBy || '']));
+  data.push({ range: 'Chores!A1', values: choreRows });
+
+  // ── Tab 4: Backup (full JSON — for cross-device restore) ──────────────────
+  data.push({ range: 'Backup!A1', values: [['KEY','VALUE','UPDATED'], ['state_json', JSON.stringify(S), now]] });
+
+  return data;
+}
+
+// Helper: get week/month keys (same logic as rest of app)
+function getWeekKey() {
+  const d = new Date(), day = d.getDay(), m = new Date(d.setDate(d.getDate() - day));
+  return `${m.getFullYear()}-W${m.getMonth()}-${m.getDate()}`;
+}
+function getMonthKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${d.getMonth()}`;
+}
+
+async function ensureSheetExists() {
+  try {
+    const res = await fetch(`${API_BASE}?fields=sheets.properties.title`, {
+      headers: { 'Authorization': `Bearer ${gToken}` }
+    });
+    if (!res.ok) return;
+    const meta = await res.json();
+    const existing = (meta.sheets || []).map(s => s.properties.title);
+    const needed = ['Stars', 'Tasks', 'Chores', 'Backup'];
+    const toAdd = needed.filter(t => !existing.includes(t));
+    if (toAdd.length === 0) return;
+    await fetch(`${API_BASE}:batchUpdate`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${gToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requests: toAdd.map(title => ({ addSheet: { properties: { title } } })) })
+    });
+  } catch(e) { console.error('ensureSheet error:', e); }
 }
 
 async function saveToSheet() {
   if (!gToken || !sheetReady) { saveLocal(); return; }
-  setSyncStatus('syncing','Saving…');
+  setSyncStatus('syncing', 'Saving…');
   saveLocal();
   try {
-    const body = {
-      valueInputOption: 'RAW',
-      data: [{
-        range: 'Data!A1:C2',
-        values: stateToSheetData()
-      }]
-    };
+    const body = { valueInputOption: 'RAW', data: buildSheetPayload() };
     const res = await fetch(`${API_BASE}/values:batchUpdate`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${gToken}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
     if (!res.ok) throw new Error(await res.text());
-    setSyncStatus('ok','Saved');
+    setSyncStatus('ok', 'Saved');
   } catch(e) {
     console.error('Sheet save error:', e);
-    setSyncStatus('error','Save failed — working offline');
+    setSyncStatus('error', 'Save failed — working offline');
   }
 }
 
 async function loadFromSheet() {
   if (!gToken) { loadLocal(); return; }
-  setSyncStatus('syncing','Loading your data…');
+  setSyncStatus('syncing', 'Loading your data…');
   try {
-    // Ensure the Data sheet exists first
     await ensureSheetExists();
-    const res = await fetch(`${API_BASE}/values/Data!A2:C2`, {
+    // Load from Backup tab (the full JSON restore)
+    const res = await fetch(`${API_BASE}/values/Backup!A2:C2`, {
       headers: { 'Authorization': `Bearer ${gToken}` }
     });
     if (!res.ok) throw new Error(await res.text());
     const data = await res.json();
     if (data.values && data.values[0] && data.values[0][1]) {
       const loaded = JSON.parse(data.values[0][1]);
-      // Merge with defaults to handle new fields
       S = mergeState(loaded);
       saveLocal();
     } else {
-      // First time — push defaults
+      // First time — push current local data to all tabs
       loadLocal();
       await saveToSheet();
     }
     sheetReady = true;
-    setSyncStatus('ok','Synced');
+    setSyncStatus('ok', 'Synced');
   } catch(e) {
     console.error('Sheet load error:', e);
-    setSyncStatus('error','Using local data — sheet sync failed');
+    setSyncStatus('error', 'Using local data — sheet sync failed');
     loadLocal();
   }
 }
@@ -837,31 +891,6 @@ function mergeState(loaded) {
     });
   }
   return merged;
-}
-
-async function ensureSheetExists() {
-  // Check if "Data" sheet tab exists; create if not
-  try {
-    const res = await fetch(`${API_BASE}?fields=sheets.properties.title`, {
-      headers: { 'Authorization': `Bearer ${gToken}` }
-    });
-    if (!res.ok) return;
-    const meta = await res.json();
-    const titles = (meta.sheets || []).map(s => s.properties.title);
-    if (!titles.includes('Data')) {
-      await fetch(`${API_BASE}:batchUpdate`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${gToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ requests: [{ addSheet: { properties: { title: 'Data' } } }] })
-      });
-      // Write header
-      await fetch(`${API_BASE}/values/Data!A1:C1?valueInputOption=RAW`, {
-        method: 'PUT',
-        headers: { 'Authorization': `Bearer ${gToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ values: [['KEY','VALUE','UPDATED']] })
-      });
-    }
-  } catch(e) { console.error('ensureSheet error:', e); }
 }
 
 function saveLocal() { try { localStorage.setItem('familyRoutines_v1', JSON.stringify(S)); } catch(e){} }
@@ -1398,24 +1427,9 @@ async function factoryReset(){
     setSyncStatus('syncing','Clearing sheet…');
     try {
       await ensureSheetExists();
-      const now = new Date().toISOString();
-      const body = {
-        valueInputOption: 'RAW',
-        data: [{ range: 'Data!A1:C2', values: [['KEY','VALUE','UPDATED'],['state_json', JSON.stringify(S), now]] }]
-      };
-      const res = await fetch(`${API_BASE}/values:batchUpdate`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${gToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-      if(!res.ok) throw new Error(await res.text());
       sheetReady = true;
+      await saveToSheet();
       setSyncStatus('ok','Reset complete ✓');
-      // Also clear any extra rows
-      await fetch(`${API_BASE}/values/Data!A3:C100:clear`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${gToken}`, 'Content-Type': 'application/json' }
-      });
     } catch(e){ console.error(e); setSyncStatus('error','Sheet reset failed'); }
   }
   renderAdmin();
