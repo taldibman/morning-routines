@@ -1414,10 +1414,9 @@ function getTokenClient() {
       if (response.access_token) {
         gToken = response.access_token;
         updateGoogleUI();
-        setSyncStatus('syncing', 'Saving to Google Sheets…');
-        await ensureSheetExists();
-        await saveToSheet();
-        setSyncStatus('ok', 'Synced ✓');
+        // loadFromSheet sets sheetReady=true and saves local data if sheet is empty
+        await loadFromSheet();
+        setSyncStatus('ok', 'Connected & Synced ✓');
       } else {
         updateGoogleUI();
       }
@@ -1443,6 +1442,7 @@ async function syncNow() {
   if (!gToken) { connectGoogle(); return; }
   setSyncStatus('syncing', 'Syncing…');
   await ensureSheetExists();
+  sheetReady = true;
   await saveToSheet();
   setSyncStatus('ok', 'Synced ✓');
 }
