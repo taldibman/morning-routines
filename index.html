@@ -622,9 +622,30 @@ body {
   </div>
 
   <div class="adm-card">
-    <h3>🔗 Google Sheets Link</h3>
-    <p style="font-size:12px;color:#999;margin-bottom:8px">Your data is synced to this sheet. Open it to view or back up your data.</p>
-    <a id="sheet-link" href="#" target="_blank" style="font-size:13px;font-weight:700;color:var(--dusk)">📊 Open Google Sheet ↗</a>
+    <h3>🔗 Google Sheets Sync</h3>
+    <div id="gs-disconnected" style="display:none">
+      <p style="font-size:12px;color:#999;margin-bottom:12px">Connect your Google account to sync data across all devices in real time.</p>
+      <button onclick="connectGoogle()" style="background:white;border:2px solid #ddd;border-radius:14px;padding:10px 18px;font-family:'Quicksand',sans-serif;font-weight:800;font-size:13px;cursor:pointer;display:flex;align-items:center;gap:8px;width:100%;justify-content:center">
+        <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+        Sign in with Google
+      </button>
+    </div>
+    <div id="gs-connected" style="display:none">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <span style="width:10px;height:10px;border-radius:50%;background:#4CAF50;display:inline-block"></span>
+        <span style="font-size:13px;font-weight:700;color:#4CAF50">Connected & Syncing</span>
+      </div>
+      <p style="font-size:12px;color:#999;margin-bottom:10px">Your data syncs automatically across all devices.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <a id="sheet-link" href="#" target="_blank" style="font-size:12px;font-weight:700;color:var(--dusk);text-decoration:none;background:#f0f0ff;padding:7px 14px;border-radius:10px">📊 Open Sheet ↗</a>
+        <button onclick="syncNow()" style="font-size:12px;font-weight:700;color:var(--dusk);background:#f0f0ff;border:none;border-radius:10px;padding:7px 14px;cursor:pointer;font-family:'Quicksand',sans-serif">🔄 Sync Now</button>
+        <button onclick="disconnectGoogle()" style="font-size:12px;font-weight:700;color:#999;background:#f5f5f5;border:none;border-radius:10px;padding:7px 14px;cursor:pointer;font-family:'Quicksand',sans-serif">Disconnect</button>
+      </div>
+    </div>
+    <div id="gs-loading" style="font-size:12px;color:#999;display:flex;align-items:center;gap:6px">
+      <span style="display:inline-block;width:10px;height:10px;border-radius:50%;border:2px solid #ddd;border-top-color:#999;animation:spin 1s linear infinite"></span>
+      Checking Google connection…
+    </div>
   </div>
 </div>
 
@@ -903,26 +924,24 @@ function scheduleSave() {
 function initGoogleAuth() {
   return new Promise((resolve) => {
     if (typeof google === 'undefined' || !google.accounts) {
-      // GIS not loaded — work offline
       console.warn('GIS not available, working offline');
       resolve(false); return;
     }
-    const tokenClient = google.accounts.oauth2.initTokenClient({
-      client_id: '826444747603-jt81mkm53li3snvigr57slir43e0n6bb.apps.googleusercontent.com',  // replaced at setup
+    const tc = google.accounts.oauth2.initTokenClient({
+      client_id: '826444747603-jt81mkm53li3snvigr57slir43e0n6bb.apps.googleusercontent.com',
       scope: 'https://www.googleapis.com/auth/spreadsheets',
       callback: (response) => {
         if (response.access_token) {
           gToken = response.access_token;
           resolve(true);
         } else {
-          console.warn('Auth failed:', response);
           resolve(false);
         }
       },
     });
-    // Try silent first
-    tokenClient.requestAccessToken({ prompt: '' });
-    // If GIS doesn't call back in 3s, resolve offline
+    // Silent token attempt (no prompt)
+    tc.requestAccessToken({ prompt: '' });
+    // Fallback to offline after 3s if no response
     setTimeout(() => resolve(false), 3000);
   });
 }
@@ -1366,6 +1385,69 @@ function changePin(){
 }
 
 // ═══════════════════════════════════
+// GOOGLE CONNECT / DISCONNECT UI
+// ═══════════════════════════════════
+function updateGoogleUI() {
+  const loading = document.getElementById('gs-loading');
+  const connected = document.getElementById('gs-connected');
+  const disconnected = document.getElementById('gs-disconnected');
+  if (!loading) return;
+  loading.style.display = 'none';
+  if (gToken) {
+    connected.style.display = 'block';
+    disconnected.style.display = 'none';
+    document.getElementById('sheet-link').href = SHEET_URL;
+  } else {
+    connected.style.display = 'none';
+    disconnected.style.display = 'block';
+  }
+}
+
+let _tokenClient = null;
+function getTokenClient() {
+  if (_tokenClient) return _tokenClient;
+  if (typeof google === 'undefined' || !google.accounts) return null;
+  _tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: '826444747603-jt81mkm53li3snvigr57slir43e0n6bb.apps.googleusercontent.com',
+    scope: 'https://www.googleapis.com/auth/spreadsheets',
+    callback: async (response) => {
+      if (response.access_token) {
+        gToken = response.access_token;
+        updateGoogleUI();
+        setSyncStatus('syncing', 'Saving to Google Sheets…');
+        await ensureSheetExists();
+        await saveToSheet();
+        setSyncStatus('ok', 'Synced ✓');
+      } else {
+        updateGoogleUI();
+      }
+    },
+  });
+  return _tokenClient;
+}
+
+function connectGoogle() {
+  const tc = getTokenClient();
+  if (!tc) { alert('Google sign-in is not available. Please check your connection.'); return; }
+  tc.requestAccessToken({ prompt: 'consent' });
+}
+
+function disconnectGoogle() {
+  if (gToken) google.accounts.oauth2.revoke(gToken, () => {});
+  gToken = null;
+  updateGoogleUI();
+  setSyncStatus('ok', 'Disconnected — using local save');
+}
+
+async function syncNow() {
+  if (!gToken) { connectGoogle(); return; }
+  setSyncStatus('syncing', 'Syncing…');
+  await ensureSheetExists();
+  await saveToSheet();
+  setSyncStatus('ok', 'Synced ✓');
+}
+
+// ═══════════════════════════════════
 // INIT
 // ═══════════════════════════════════
 async function init() {
@@ -1399,6 +1481,9 @@ async function init() {
     ls.classList.add('hide');
     setTimeout(() => ls.remove(), 500);
   }, 800);
+
+  // Update Google connect UI
+  updateGoogleUI();
 }
 
 // Load GIS script then init
