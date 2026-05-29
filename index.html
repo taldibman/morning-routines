@@ -574,6 +574,12 @@ body {
   </div>
 
   <div class="adm-card">
+    <h3>🗑️ Factory Reset</h3>
+    <p style="font-size:12px;color:#999;margin-bottom:10px">Clears <strong>all stars, all data</strong> and resets everything to defaults. Cannot be undone.</p>
+    <button onclick="factoryReset()" style="background:#ff4444;color:white;border:none;border-radius:14px;padding:11px 18px;font-family:Quicksand,sans-serif;font-weight:800;font-size:13px;cursor:pointer;width:100%">🗑️ Factory Reset — Clear Everything</button>
+  </div>
+
+  <div class="adm-card">
     <h3>🧒 Personal Tasks</h3>
     <div class="kid-tabs" id="adm-kid-tabs"></div>
     <div class="routine-type-tabs">
@@ -1374,6 +1380,34 @@ function resetTasks(){
   S.chores.forEach(c=>c.done=false);
   S.lastReset=new Date().toDateString();
   scheduleSave();renderAdmin();renderHome();alert('✅ All tasks reset!');
+}
+
+async function factoryReset(){
+  if(!confirm('⚠️ This will clear ALL stars, tasks progress, and reset everything to defaults. Are you sure?')) return;
+  if(!confirm('Are you really sure? This cannot be undone.')) return;
+  // Reset to defaults
+  S = JSON.parse(JSON.stringify(DEFAULTS));
+  S.lastReset = new Date().toDateString();
+  // Clear localStorage
+  try { localStorage.removeItem('familyRoutines_v1'); } catch(e){}
+  // Clear Google Sheet if connected
+  if(gToken && sheetReady){
+    setSyncStatus('syncing','Clearing sheet…');
+    try {
+      await fetch(`${API_BASE}/values/Data!A1:C2?valueInputOption=RAW`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${gToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ values: [['KEY','VALUE','UPDATED']] })
+      });
+      // Now save fresh defaults
+      await saveToSheet();
+      setSyncStatus('ok','Reset complete');
+    } catch(e){ setSyncStatus('error','Sheet clear failed'); }
+  }
+  saveLocal();
+  renderAdmin();
+  renderHome();
+  alert('✅ Factory reset complete! Everything is cleared.');
 }
 function changePin(){
   const v=document.getElementById('new-pin').value.trim();
