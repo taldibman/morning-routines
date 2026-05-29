@@ -691,7 +691,7 @@ const RANKS = [
   {name:'Champion',   emoji:'🦁', min:200, max:349, color:'#EF476F'},
   {name:'Legend',     emoji:'🐉', min:350, max:Infinity, color:'#06D6A0'},
 ];
-const AVLIST = ['🦄','🐱','🐶','🦊','🐼','🐸','🦋','🐝','🐯','🦁','🐨','🐻','🦩','🦜','🐙','🦕','🐳','🦔','🐲','🌸','🐠','🐧','🦚','🦒','🌻'];
+const AVLIST = ['🦄','🐱','🐶','🦊','🐼','🐸','🦋','🐝','🐯','🦁','🐨','🐻','🦩','🦜','🐙','🦕','🐳','🦔','🐲','🌸','🐠','🐧','🦚','🦒','🌻','⭐','🌈','🎯','🏆','🎸','🚀','🌊','🍀','🦸','🎨','🐉','🦅','🌺','🍉','🎃','🦓','🐬','🦋','🌙','🔥'];
 
 function getRank(s){return RANKS.find(r=>s>=r.min&&s<=r.max)||RANKS[0];}
 function getNextRank(s){const i=RANKS.findIndex(r=>s>=r.min&&s<=r.max);return i<RANKS.length-1?RANKS[i+1]:null;}
@@ -956,7 +956,9 @@ function initGoogleAuth() {
 // AUTO RESET
 // ═══════════════════════════════════
 function checkReset() {
-  const today = new Date().toDateString();
+  // Use Tel Aviv date for reset reference
+  const tlvDate = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jerusalem' }));
+  const today = tlvDate.toDateString();
   if (S.lastReset !== today) {
     S.kids.forEach(k => {
       k.morningTasks.forEach(t => t.done = false);
@@ -971,6 +973,19 @@ function checkReset() {
 // ═══════════════════════════════════
 // MODE (morning / evening)
 // ═══════════════════════════════════
+function getTelAvivHour() {
+  // Get current hour in Tel Aviv (Asia/Jerusalem)
+  const now = new Date();
+  const tlv = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jerusalem' }));
+  return tlv.getHours();
+}
+
+function getAutoMode() {
+  const h = getTelAvivHour();
+  // Morning: 5am–2pm, Evening: 2pm–5am
+  return (h >= 5 && h < 14) ? 'morning' : 'evening';
+}
+
 function setMode(m) {
   S.mode = m;
   document.body.className = m;
@@ -987,6 +1002,21 @@ function toggleMode() {
   scheduleSave();
   if(currentKidId) renderKidView();
   renderHome();
+}
+
+// Auto-update mode every minute based on Tel Aviv time
+function startAutoMode() {
+  function checkMode() {
+    const auto = getAutoMode();
+    if (auto !== S.mode) {
+      setMode(auto);
+      scheduleSave();
+      renderHome();
+      if(currentKidId) renderKidView();
+    }
+  }
+  checkMode();
+  setInterval(checkMode, 60000);
 }
 
 // ═══════════════════════════════════
@@ -1301,9 +1331,12 @@ function renderAdmin(){
   renderAdmKidTasks();
 
   document.getElementById('adm-chores').innerHTML=S.chores.map((c,i)=>`
-    <div class="a-row">
-      <span class="ai">${c.icon}</span><span class="al">${c.label}</span>
-      <div class="toggle ${c.done?'on':''}" onclick="toggleChoreAdm(${i})"></div>
+    <div class="a-row" id="chore-row-${i}" draggable="true" ondragstart="choreDragStart(${i})" ondragover="choreDragOver(event,${i})" ondrop="choreDrop(event,${i})" style="cursor:grab">
+      <span style="color:#ccc;font-size:16px;margin-right:4px;cursor:grab">☰</span>
+      <span class="ai">${c.icon}</span>
+      <span class="al" id="chore-lbl-${i}" ondblclick="editChore(${i})" title="Double-click to edit">${c.label}</span>
+      <input id="chore-inp-${i}" class="add-inp" style="display:none;flex:1;font-size:13px;padding:4px 8px" value="${c.label}" onblur="saveChoreEdit(${i})" onkeydown="if(event.key==='Enter')saveChoreEdit(${i});if(event.key==='Escape')cancelChoreEdit(${i})">
+      <button class="del-btn" onclick="editChore(${i})" style="background:#e8e8ff;color:var(--dusk);margin-right:4px" title="Edit">✏️</button>
       <button class="del-btn" onclick="delChore(${i})">✕</button>
     </div>
   `).join('');
@@ -1412,6 +1445,33 @@ async function factoryReset(){
   renderHome();
   alert('✅ Factory reset complete! Everything is cleared.');
 }
+function editChore(i){
+  document.getElementById('chore-lbl-'+i).style.display='none';
+  const inp=document.getElementById('chore-inp-'+i);
+  inp.style.display='block';inp.focus();inp.select();
+}
+function saveChoreEdit(i){
+  const inp=document.getElementById('chore-inp-'+i);
+  const v=inp.value.trim();
+  if(v) S.chores[i].label=v;
+  scheduleSave();renderAdmin();renderChores();
+}
+function cancelChoreEdit(i){
+  renderAdmin();
+}
+
+let choreDragIdx = null;
+function choreDragStart(i){ choreDragIdx=i; }
+function choreDragOver(e,i){ e.preventDefault(); }
+function choreDrop(e,i){
+  e.preventDefault();
+  if(choreDragIdx===null||choreDragIdx===i) return;
+  const moved=S.chores.splice(choreDragIdx,1)[0];
+  S.chores.splice(i,0,moved);
+  choreDragIdx=null;
+  scheduleSave();renderAdmin();renderChores();
+}
+
 function changePin(){
   const v=document.getElementById('new-pin').value.trim();
   const msg=document.getElementById('pin-chg-msg');
@@ -1508,7 +1568,7 @@ async function init() {
   }
 
   checkReset();
-  setMode(S.mode||'morning');
+  startAutoMode();
   renderHome();
   renderCalendar();
 
