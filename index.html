@@ -1061,7 +1061,20 @@ function renderChores() {
     const el=document.createElement('div');
     el.className='chore-chip'+(c.done?' done':'');
     el.innerHTML=`<span>${c.icon}</span>${c.label}`;
-    el.onclick=()=>{if(!c.done){c.done=true;scheduleSave();renderChores();}};
+    el.onclick=()=>{
+      if(!c.done){
+        c.done=true;
+        // Award 2 stars to current kid if in kid view, else first kid
+        const awardKid = currentKidId ? S.kids.find(k=>k.id===currentKidId) : S.kids[0];
+        if(awardKid){
+          const wk=weekKey(), mo=monthKey();
+          awardKid.starsAllTime += 2;
+          awardKid.starsWeek[wk] = (awardKid.starsWeek[wk]||0) + 2;
+          awardKid.starsMonth[mo] = (awardKid.starsMonth[mo]||0) + 2;
+        }
+        scheduleSave();renderChores();renderHome();
+      }
+    };
     row.appendChild(el);
   });
 }
@@ -1114,17 +1127,35 @@ function renderKidView() {
   });
 }
 
+// Returns milestone stars for a given completion state
+// 0 done=0, 1+ done=1, >=50%=3, 100%=8
+function milestoneStars(tasks) {
+  const total = tasks.length;
+  if(total === 0) return 0;
+  const done = tasks.filter(t=>t.done).length;
+  if(done === 0) return 0;
+  if(done === total) return 8;
+  if(done / total >= 0.5) return 3;
+  return 1;
+}
+
 function toggleTask(kidId, taskId, routine) {
-  const kid=S.kids.find(k=>k.id===kidId);
-  const tasks=routine==='morning'?kid.morningTasks:kid.eveningTasks;
-  const task=tasks.find(t=>t.id===taskId);
-  const was=task.done;
-  task.done=!task.done;
-  const delta=task.done?1:-1;
-  kid.starsAllTime=Math.max(0,kid.starsAllTime+delta);
+  const kid = S.kids.find(k=>k.id===kidId);
+  const tasks = routine==='morning' ? kid.morningTasks : kid.eveningTasks;
+  const task = tasks.find(t=>t.id===taskId);
+
+  // Stars before the change
+  const starsBefore = milestoneStars(tasks);
+  task.done = !task.done;
+  // Stars after the change
+  const starsAfter = milestoneStars(tasks);
+
+  const delta = starsAfter - starsBefore;
   const wk=weekKey(), mo=monthKey();
-  kid.starsWeek[wk]=Math.max(0,(kid.starsWeek[wk]||0)+delta);
-  kid.starsMonth[mo]=Math.max(0,(kid.starsMonth[mo]||0)+delta);
+  kid.starsAllTime = Math.max(0, kid.starsAllTime + delta);
+  kid.starsWeek[wk] = Math.max(0, (kid.starsWeek[wk]||0) + delta);
+  kid.starsMonth[mo] = Math.max(0, (kid.starsMonth[mo]||0) + delta);
+
   scheduleSave();
   renderKidView();
   renderHome();
