@@ -498,6 +498,8 @@ body {
   </div>
   <div class="sec-title" id="kd-tasks-title">My Tasks</div>
   <div id="kd-tasks"></div>
+  <div class="sec-title" style="margin-top:18px">🏠 Family Chores <span class="sec-sub">First to do it wins!</span></div>
+  <div class="chores-card"><div id="chores-row-kid"></div></div>
 </div>
 
 <!-- ══ DASHBOARD ══ -->
@@ -804,19 +806,28 @@ function getMonthKey() {
 
 async function ensureSheetExists() {
   try {
-    const res = await fetch(`${API_BASE}?fields=sheets.properties.title`, {
+    const res = await fetch(`${API_BASE}?fields=sheets.properties`, {
       headers: { 'Authorization': `Bearer ${gToken}` }
     });
     if (!res.ok) return;
     const meta = await res.json();
-    const existing = (meta.sheets || []).map(s => s.properties.title);
+    const sheets = meta.sheets || [];
+    const existing = sheets.map(s => s.properties.title);
     const needed = ['Stars', 'Tasks', 'Chores', 'Backup'];
     const toAdd = needed.filter(t => !existing.includes(t));
-    if (toAdd.length === 0) return;
+    // Sheets to delete: "Sheet1" (default empty), "Data" (old format)
+    const toDelete = sheets
+      .filter(s => s.properties.title === 'Sheet1' || s.properties.title === 'Data')
+      .map(s => ({ deleteSheet: { sheetId: s.properties.sheetId } }));
+    const requests = [
+      ...toAdd.map(title => ({ addSheet: { properties: { title } } })),
+      ...toDelete
+    ];
+    if (requests.length === 0) return;
     await fetch(`${API_BASE}:batchUpdate`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${gToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ requests: toAdd.map(title => ({ addSheet: { properties: { title } } })) })
+      body: JSON.stringify({ requests })
     });
   } catch(e) { console.error('ensureSheet error:', e); }
 }
@@ -1084,27 +1095,29 @@ function renderHome() {
 }
 
 function renderChores() {
-  const row=document.getElementById('chores-row');
-  row.innerHTML='';
-  S.chores.forEach(c=>{
-    const el=document.createElement('div');
-    el.className='chore-chip'+(c.done?' done':'');
-    el.innerHTML=`<span>${c.icon}</span>${c.label}`;
-    el.onclick=()=>{
-      if(!c.done){
-        c.done=true;
-        // Award 2 stars to current kid if in kid view, else first kid
-        const awardKid = currentKidId ? S.kids.find(k=>k.id===currentKidId) : S.kids[0];
-        if(awardKid){
-          const wk=weekKey(), mo=monthKey();
-          awardKid.starsAllTime += 2;
-          awardKid.starsWeek[wk] = (awardKid.starsWeek[wk]||0) + 2;
-          awardKid.starsMonth[mo] = (awardKid.starsMonth[mo]||0) + 2;
+  ['chores-row', 'chores-row-kid'].forEach(containerId => {
+    const row = document.getElementById(containerId);
+    if (!row) return;
+    row.innerHTML = '';
+    S.chores.forEach(c => {
+      const el = document.createElement('div');
+      el.className = 'chore-chip' + (c.done ? ' done' : '');
+      el.innerHTML = `<span>${c.icon}</span>${c.label}`;
+      el.onclick = () => {
+        if (!c.done) {
+          c.done = true;
+          const awardKid = currentKidId ? S.kids.find(k => k.id === currentKidId) : S.kids[0];
+          if (awardKid) {
+            const wk = weekKey(), mo = monthKey();
+            awardKid.starsAllTime += 2;
+            awardKid.starsWeek[wk] = (awardKid.starsWeek[wk] || 0) + 2;
+            awardKid.starsMonth[mo] = (awardKid.starsMonth[mo] || 0) + 2;
+          }
+          scheduleSave(); renderChores(); renderHome();
         }
-        scheduleSave();renderChores();renderHome();
-      }
-    };
-    row.appendChild(el);
+      };
+      row.appendChild(el);
+    });
   });
 }
 
@@ -1154,6 +1167,7 @@ function renderKidView() {
     el.onclick=()=>toggleTask(kid.id, task.id, kidRoutine);
     list.appendChild(el);
   });
+  renderChores();
 }
 
 // Returns milestone stars for a given completion state
