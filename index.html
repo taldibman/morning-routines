@@ -965,14 +965,21 @@ function toggleMode() {
 function startAutoMode() {
   function checkMode() {
     const auto = getAutoMode();
+    // Always apply the correct mode on every check (fixes init color mismatch)
     if (auto !== S.mode) {
       setMode(auto);
       scheduleSave();
       renderHome();
       if(currentKidId) renderKidView();
+    } else {
+      // Still re-apply body class in case it was lost
+      document.body.className = auto;
     }
   }
-  checkMode();
+  // Force correct mode immediately, always
+  const auto = getAutoMode();
+  S.mode = auto;
+  document.body.className = auto;
   setInterval(checkMode, 60000);
 }
 
