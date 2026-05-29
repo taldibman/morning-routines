@@ -1333,7 +1333,6 @@ function addChore(){
   S.chores.push({id:'c'+Date.now(),icon:'🏠',label:v,done:false});
   document.getElementById('new-chore').value='';scheduleSave();renderAdmin();renderChores();
 }
-}
 function resetTasks(){
   S.kids.forEach(k=>{k.morningTasks.forEach(t=>t.done=false);k.eveningTasks.forEach(t=>t.done=false);});
   S.chores.forEach(c=>c.done=false);
