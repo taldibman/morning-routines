@@ -1385,26 +1385,29 @@ function resetTasks(){
 async function factoryReset(){
   if(!confirm('⚠️ This will clear ALL stars, tasks progress, and reset everything to defaults. Are you sure?')) return;
   if(!confirm('Are you really sure? This cannot be undone.')) return;
-  // Reset to defaults
   S = JSON.parse(JSON.stringify(DEFAULTS));
   S.lastReset = new Date().toDateString();
-  // Clear localStorage
   try { localStorage.removeItem('familyRoutines_v1'); } catch(e){}
-  // Clear Google Sheet if connected
-  if(gToken && sheetReady){
+  saveLocal();
+  if(gToken){
     setSyncStatus('syncing','Clearing sheet…');
     try {
-      await fetch(`${API_BASE}/values/Data!A1:C2?valueInputOption=RAW`, {
-        method: 'PUT',
+      await ensureSheetExists();
+      const now = new Date().toISOString();
+      const body = {
+        valueInputOption: 'RAW',
+        data: [{ range: 'Data!A1:C2', values: [['KEY','VALUE','UPDATED'],['state_json', JSON.stringify(S), now]] }]
+      };
+      const res = await fetch(`${API_BASE}/values:batchUpdate`, {
+        method: 'POST',
         headers: { 'Authorization': `Bearer ${gToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ values: [['KEY','VALUE','UPDATED']] })
+        body: JSON.stringify(body)
       });
-      // Now save fresh defaults
-      await saveToSheet();
-      setSyncStatus('ok','Reset complete');
-    } catch(e){ setSyncStatus('error','Sheet clear failed'); }
+      if(!res.ok) throw new Error(await res.text());
+      sheetReady = true;
+      setSyncStatus('ok','Reset complete ✓');
+    } catch(e){ console.error(e); setSyncStatus('error','Sheet reset failed'); }
   }
-  saveLocal();
   renderAdmin();
   renderHome();
   alert('✅ Factory reset complete! Everything is cleared.');
