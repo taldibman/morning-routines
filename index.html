@@ -357,7 +357,6 @@ body {
 .cal-day.today { background: var(--grad); color: white; }
 .cal-day.other { color: #CCC; }
 .ev-dot { width: 5px; height: 5px; border-radius: 50%; position: absolute; bottom: 3px; }
-.events-list { display: flex; flex-direction: column; gap: 8px; }
 .ev-item {
   background: var(--card); border-radius: 13px;
   padding: 11px 13px; box-shadow: var(--sh);
@@ -367,7 +366,6 @@ body {
 .ev-badge { background: var(--grad-soft); border-radius: 9px; padding: 5px 9px; text-align: center; min-width: 42px; }
 .ev-badge-d { font-family: 'Baloo 2', sans-serif; font-size: 18px; font-weight: 900; color: var(--accent); line-height: 1; }
 .ev-badge-m { font-size: 9px; font-weight: 800; color: var(--accent); text-transform: uppercase; }
-.ev-title { font-size: 13px; font-weight: 800; }
 .ev-who { font-size: 10px; color: var(--muted); margin-top: 1px; font-weight: 700; }
 .no-ev { text-align: center; color: var(--muted); font-size: 13px; font-weight: 700; padding: 18px; }
 
@@ -457,7 +455,7 @@ body {
   <div class="nav-tab" onclick="switchKid('alex')" id="tab-alex"><span class="ti" id="tav-alex">🦋</span>Alex</div>
   <div class="nav-tab" onclick="switchKid('itamar')" id="tab-itamar"><span class="ti" id="tav-itamar">🦁</span>Itamar</div>
   <div class="nav-tab" onclick="switchTab('dashboard')" id="tab-dashboard"><span class="ti">⭐</span>Stars</div>
-  <div class="nav-tab" onclick="switchTab('calendar')" id="tab-calendar"><span class="ti">📅</span>Cal</div>
+  
 </div>
 
 <!-- ══ HOME ══ -->
@@ -517,23 +515,6 @@ body {
     <h4>Animal Rank System 🐾</h4>
     <div id="rank-guide-rows"></div>
   </div>
-</div>
-
-<!-- ══ CALENDAR ══ -->
-<div id="view-calendar" class="view">
-  <div class="cal-hdr">
-    <button class="cal-nav" onclick="calNav(-1)">◀</button>
-    <div class="cal-month-lbl" id="cal-lbl"></div>
-    <button class="cal-nav" onclick="calNav(1)">▶</button>
-  </div>
-  <div class="cal-grid">
-    <div class="cal-dh">
-      <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
-    </div>
-    <div class="cal-days" id="cal-days"></div>
-  </div>
-  <div class="sec-title">📌 Upcoming Events</div>
-  <div class="events-list" id="events-list"></div>
 </div>
 
 <!-- ══ ADMIN PIN ══ -->
@@ -598,24 +579,7 @@ body {
     </div>
   </div>
 
-  <div class="adm-card">
-    <h3>📅 School Calendar Events</h3>
-    <div id="adm-events"></div>
-    <div class="ev-add-form">
-      <div class="ev-add-row">
-        <input type="date" id="ev-date" class="add-inp">
-        <select id="ev-kid" class="add-inp">
-          <option value="all">All kids</option>
-          <option value="alona">Alona</option>
-          <option value="alex">Alex</option>
-          <option value="itamar">Itamar</option>
-        </select>
-      </div>
-      <div class="ev-add-row">
-        <input type="text" id="ev-title" placeholder="Event title (e.g. Field trip 🚌)" class="add-inp">
-        <button class="add-btn" onclick="addEvent()">+ Add</button>
-      </div>
-    </div>
+  
   </div>
 
   <div class="adm-card">
@@ -765,10 +729,6 @@ const DEFAULTS = {
     {id:'s2',icon:'🍽️',label:'Unload dishwasher',done:false},
     {id:'s3',icon:'🗑️',label:'Take out trash',done:false},
   ],
-  events:[
-    {id:'e1',date:'2026-06-10',title:'End of year show 🎭',kid:'all'},
-    {id:'e2',date:'2026-06-15',title:'Summer break starts 🏖️',kid:'all'},
-  ],
   lastReset: new Date().toDateString()
 };
 
@@ -778,8 +738,6 @@ let kidRoutine = 'morning';   // which routine the kid view is showing
 let admKidTab = 'alona';
 let admRoutine = 'morning';
 let dashPeriod = 'week';
-let calYear, calMonth;
-const nd = new Date(); calYear=nd.getFullYear(); calMonth=nd.getMonth();
 let avKidId = null;
 let sheetReady = false;
 
@@ -862,11 +820,10 @@ async function loadFromSheet() {
 function mergeState(loaded) {
   // Deep merge loaded with defaults to handle new fields
   const merged = JSON.parse(JSON.stringify(DEFAULTS));
-  if (loaded.pin) merged.pin = loaded.pin;
+  merged.pin = loaded.pin || merged.pin; // always prefer saved PIN
   if (loaded.mode) merged.mode = loaded.mode;
   if (loaded.lastReset) merged.lastReset = loaded.lastReset;
   if (loaded.chores) merged.chores = loaded.chores;
-  if (loaded.events) merged.events = loaded.events;
   if (loaded.kids) {
     merged.kids = merged.kids.map(dk => {
       const lk = loaded.kids.find(k => k.id === dk.id);
@@ -1029,7 +986,6 @@ function switchTab(name) {
   const t=document.getElementById('tab-'+name); if(t) t.classList.add('active');
   if(name==='home') renderHome();
   if(name==='dashboard') renderDashboard();
-  if(name==='calendar') renderCalendar();
 }
 function switchKid(id) {
   currentKidId = id;
@@ -1229,46 +1185,6 @@ function renderDashboard(){
 }
 
 // ═══════════════════════════════════
-// CALENDAR
-// ═══════════════════════════════════
-const MNAMES=['January','February','March','April','May','June','July','August','September','October','November','December'];
-function calNav(d){calMonth+=d;if(calMonth>11){calMonth=0;calYear++;}if(calMonth<0){calMonth=11;calYear--;}renderCalendar();}
-function renderCalendar(){
-  document.getElementById('cal-lbl').textContent=`${MNAMES[calMonth]} ${calYear}`;
-  const first=new Date(calYear,calMonth,1).getDay();
-  const dim=new Date(calYear,calMonth+1,0).getDate();
-  const prev=new Date(calYear,calMonth,0).getDate();
-  const today=new Date();
-  const evDates=new Set(S.events.filter(e=>{const d=new Date(e.date);return d.getFullYear()===calYear&&d.getMonth()===calMonth;}).map(e=>new Date(e.date).getDate()));
-  const calDays=document.getElementById('cal-days');
-  calDays.innerHTML='';
-  for(let i=first-1;i>=0;i--){const d=document.createElement('div');d.className='cal-day other';d.textContent=prev-i;calDays.appendChild(d);}
-  for(let d=1;d<=dim;d++){
-    const el=document.createElement('div');
-    const isToday=today.getDate()===d&&today.getMonth()===calMonth&&today.getFullYear()===calYear;
-    el.className='cal-day'+(isToday?' today':'');
-    el.textContent=d;
-    if(evDates.has(d)&&!isToday){const dot=document.createElement('div');dot.className='ev-dot';dot.style.background='var(--accent)';el.appendChild(dot);}
-    calDays.appendChild(el);
-  }
-  const tot=first+dim; const rem=tot%7===0?0:7-(tot%7);
-  for(let i=1;i<=rem;i++){const d=document.createElement('div');d.className='cal-day other';d.textContent=i;calDays.appendChild(d);}
-
-  const evList=document.getElementById('events-list');
-  const now=new Date();now.setHours(0,0,0,0);
-  const upcoming=S.events.filter(e=>new Date(e.date)>=now).sort((a,b)=>new Date(a.date)-new Date(b.date)).slice(0,12);
-  if(!upcoming.length){evList.innerHTML='<div class="no-ev">No upcoming events. Add some in Admin! 📅</div>';return;}
-  const SMON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  evList.innerHTML=upcoming.map(e=>{
-    const d=new Date(e.date);
-    const kid=S.kids.find(k=>k.id===e.kid);
-    const who=e.kid==='all'?'👨‍👩‍👧‍👦 All kids':(kid?`${kid.avatar} ${kid.name}`:'All');
-    return`<div class="ev-item">
-      <div class="ev-badge"><div class="ev-badge-d">${d.getDate()}</div><div class="ev-badge-m">${SMON[d.getMonth()]}</div></div>
-      <div><div class="ev-title">${e.title}</div><div class="ev-who">${who}</div></div>
-    </div>`;
-  }).join('');
-}
 
 // ═══════════════════════════════════
 // AVATAR
@@ -1341,12 +1257,6 @@ function renderAdmin(){
     </div>
   `).join('');
 
-  document.getElementById('adm-events').innerHTML=S.events.length?[...S.events].sort((a,b)=>new Date(a.date)-new Date(b.date)).map((e,i)=>{
-    const kid=S.kids.find(k=>k.id===e.kid);
-    const who=e.kid==='all'?'All':(kid?kid.name:'?');
-    return`<div class="a-row"><span class="al">${e.date} · ${who} · ${e.title}</span><button class="del-btn" onclick="delEvent('${e.id}')">✕</button></div>`;
-  }).join(''):'<p style="font-size:12px;color:#999;margin-bottom:8px">No events yet.</p>';
-
   document.getElementById('sheet-link').href=SHEET_URL;
 }
 
@@ -1356,9 +1266,12 @@ function renderAdmKidTasks(){
   const kid=S.kids.find(k=>k.id===admKidTab);
   const tasks=admRoutine==='morning'?kid.morningTasks:kid.eveningTasks;
   document.getElementById('adm-kid-tasks').innerHTML=tasks.map((t,i)=>`
-    <div class="a-row">
-      <span class="ai">${t.icon}</span><span class="al">${t.label}</span>
-      <div class="toggle ${t.done?'on':''}" onclick="toggleTaskAdm('${kid.id}',${i},'${admRoutine}')"></div>
+    <div class="a-row" draggable="true" ondragstart="taskDragStart('${kid.id}',${i},'${admRoutine}')" ondragover="taskDragOver(event,'${kid.id}',${i},'${admRoutine}')" ondrop="taskDrop(event,'${kid.id}',${i},'${admRoutine}')" style="cursor:grab">
+      <span style="color:#ccc;font-size:16px;margin-right:4px;cursor:grab">☰</span>
+      <span class="ai">${t.icon}</span>
+      <span class="al" id="task-lbl-${i}" ondblclick="editTask('${kid.id}',${i},'${admRoutine}')" title="Double-click to edit">${t.label}</span>
+      <input id="task-inp-${i}" class="add-inp" style="display:none;flex:1;font-size:13px;padding:4px 8px" value="${t.label}" onblur="saveTaskEdit('${kid.id}',${i},'${admRoutine}')" onkeydown="if(event.key==='Enter')saveTaskEdit('${kid.id}',${i},'${admRoutine}');if(event.key==='Escape')renderAdmKidTasks()">
+      <button class="del-btn" onclick="editTask('${kid.id}',${i},'${admRoutine}')" style="background:#e8e8ff;color:var(--dusk);margin-right:4px" title="Edit">✏️</button>
       <button class="del-btn" onclick="delTask('${kid.id}',${i},'${admRoutine}')">✕</button>
     </div>
   `).join('')+`
@@ -1387,6 +1300,32 @@ function addTask(kidId,r){
   tasks.push({id:'u'+Date.now(),icon:'✅',label:v,done:false});
   inp.value='';scheduleSave();renderAdmin();
 }
+function editTask(kidId,i,r){
+  document.getElementById('task-lbl-'+i).style.display='none';
+  const inp=document.getElementById('task-inp-'+i);
+  inp.style.display='block';inp.focus();inp.select();
+}
+function saveTaskEdit(kidId,i,r){
+  const inp=document.getElementById('task-inp-'+i);
+  const v=inp.value.trim();
+  const kid=S.kids.find(k=>k.id===kidId);
+  const tasks=r==='morning'?kid.morningTasks:kid.eveningTasks;
+  if(v) tasks[i].label=v;
+  scheduleSave();renderAdmKidTasks();
+}
+let taskDragIdx=null,taskDragKid=null,taskDragR=null;
+function taskDragStart(kidId,i,r){taskDragIdx=i;taskDragKid=kidId;taskDragR=r;}
+function taskDragOver(e,kidId,i,r){e.preventDefault();}
+function taskDrop(e,kidId,i,r){
+  e.preventDefault();
+  if(taskDragIdx===null||taskDragIdx===i||taskDragKid!==kidId||taskDragR!==r) return;
+  const kid=S.kids.find(k=>k.id===kidId);
+  const tasks=r==='morning'?kid.morningTasks:kid.eveningTasks;
+  const moved=tasks.splice(taskDragIdx,1)[0];
+  tasks.splice(i,0,moved);
+  taskDragIdx=null;
+  scheduleSave();renderAdmKidTasks();
+}
 function toggleChoreAdm(i){S.chores[i].done^=true;scheduleSave();renderAdmin();renderChores();}
 function delChore(i){S.chores.splice(i,1);scheduleSave();renderAdmin();renderChores();}
 function addChore(){
@@ -1394,19 +1333,6 @@ function addChore(){
   S.chores.push({id:'c'+Date.now(),icon:'🏠',label:v,done:false});
   document.getElementById('new-chore').value='';scheduleSave();renderAdmin();renderChores();
 }
-function addEvent(){
-  const date=document.getElementById('ev-date').value;
-  const title=document.getElementById('ev-title').value.trim();
-  const kid=document.getElementById('ev-kid').value;
-  if(!date||!title)return;
-  S.events.push({id:'ev'+Date.now(),date,title,kid});
-  document.getElementById('ev-title').value='';
-  document.getElementById('ev-date').value='';
-  scheduleSave();renderAdmin();
-}
-function delEvent(id){
-  const i=S.events.findIndex(e=>e.id===id);
-  if(i!==-1){S.events.splice(i,1);scheduleSave();renderAdmin();}
 }
 function resetTasks(){
   S.kids.forEach(k=>{k.morningTasks.forEach(t=>t.done=false);k.eveningTasks.forEach(t=>t.done=false);});
@@ -1418,7 +1344,9 @@ function resetTasks(){
 async function factoryReset(){
   if(!confirm('⚠️ This will clear ALL stars, tasks progress, and reset everything to defaults. Are you sure?')) return;
   if(!confirm('Are you really sure? This cannot be undone.')) return;
+  const savedPin = S.pin; // preserve PIN across factory reset
   S = JSON.parse(JSON.stringify(DEFAULTS));
+  S.pin = savedPin;
   S.lastReset = new Date().toDateString();
   try { localStorage.removeItem('familyRoutines_v1'); } catch(e){}
   saveLocal();
@@ -1439,6 +1367,11 @@ async function factoryReset(){
       if(!res.ok) throw new Error(await res.text());
       sheetReady = true;
       setSyncStatus('ok','Reset complete ✓');
+      // Also clear any extra rows
+      await fetch(`${API_BASE}/values/Data!A3:C100:clear`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${gToken}`, 'Content-Type': 'application/json' }
+      });
     } catch(e){ console.error(e); setSyncStatus('error','Sheet reset failed'); }
   }
   renderAdmin();
@@ -1570,7 +1503,6 @@ async function init() {
   checkReset();
   startAutoMode();
   renderHome();
-  renderCalendar();
 
   // Hide loading screen
   setTimeout(() => {
